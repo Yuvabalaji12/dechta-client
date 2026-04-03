@@ -11,8 +11,9 @@ const rateLimit  = require('express-rate-limit');
 const authRoutes    = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes   = require('./routes/orderRoutes');
-const vendorRoutes  = require('./routes/vendorRoutes');
-const errorHandler  = require('./middleware/errorHandler');
+const vendorRoutes    = require('./routes/vendorRoutes');
+const locationRoutes  = require('./routes/locationRoutes');
+const errorHandler    = require('./middleware/errorHandler');
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use('/api/auth',     authLimiter, authRoutes);
 app.use('/api/products', apiLimiter,  productRoutes);
 app.use('/api/orders',   apiLimiter,  orderRoutes);
 app.use('/api/vendors',  apiLimiter,  vendorRoutes);
+app.use('/api/location', apiLimiter,  locationRoutes);
 
 // ── Health Check ──────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {

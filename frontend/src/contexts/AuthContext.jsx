@@ -26,6 +26,7 @@ export function AuthProvider({ children }) {
         getProfile()
             .then((res) => {
                 if (res.success && res.data) {
+                    const { full_name, phone, email } = res.data;
                     const name = full_name || '';
                     const initials = name
                         ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)

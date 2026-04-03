@@ -6,6 +6,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { CartProvider } from './contexts/CartContext'
 import { AuthProvider } from './contexts/AuthContext'
 import { ToastProvider } from './contexts/ToastContext'
+import { LocationProvider } from './contexts/LocationContext'
 import { ErrorBoundary } from './ErrorBoundary'
 
 createRoot(document.getElementById('root')).render(
@@ -14,9 +15,11 @@ createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <CartProvider>
           <ToastProvider>
-            <ErrorBoundary>
-              <App />
-            </ErrorBoundary>
+            <LocationProvider>
+              <ErrorBoundary>
+                <App />
+              </ErrorBoundary>
+            </LocationProvider>
           </ToastProvider>
         </CartProvider>
       </AuthProvider>

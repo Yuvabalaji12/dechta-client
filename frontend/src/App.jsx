@@ -34,6 +34,7 @@ import FolderSelectModal from './components/FolderSelectModal';
 import MobileBottomNav from './components/MobileBottomNav';
 import NotifyModal from './components/NotifyModal';
 import WishlistAnimation from './components/WishlistAnimation';
+import LocationModal from './components/LocationModal';
 
 // Views for mobile-first navigation
 import WishlistView from './components/views/WishlistView';
@@ -463,6 +464,7 @@ export default function App() {
       <SupportModal open={supportOpen} onClose={() => setSupportOpen(false)} />
       <WishlistModal open={wishlistOpen} onClose={() => setWishlistOpen(false)} liveProducts={liveProducts} openProduct={openProduct} />
       <BookingsModal open={bookingsOpen} onClose={() => setBookingsOpen(false)} />
+      <LocationModal />
       <FolderSelectModal open={folderSelectOpen} onClose={() => setFolderSelectOpen(false)} product={selectedProductForFolder} />
       {currentPage !== 'privacy' && currentPage !== 'hire' && (
         <>

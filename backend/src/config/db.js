@@ -23,7 +23,17 @@ pool.on('connect', () => console.log('✅ PostgreSQL connected'));
 pool.on('error',   (err) => console.error('❌ Pool error:', err.message));
 
 pool.query('SELECT NOW()')
-  .then(() => console.log('✅ PostgreSQL connection verified'))
+  .then(() => {
+    console.log('✅ PostgreSQL connection verified');
+    // ── Auto-migrate: ensure Google OAuth columns exist ───────
+    return pool.query(`
+      ALTER TABLE cprofiles ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
+      ALTER TABLE cprofiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+      ALTER TABLE cprofiles ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+    `);
+  })
+  .then(() => console.log('✅ Schema migration check complete'))
   .catch((err) => console.error('❌ DB startup check failed:', err.message));
 
 module.exports = pool;
+

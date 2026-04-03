@@ -50,6 +50,29 @@ export const updateProfile = (updates) =>
     body: JSON.stringify(updates),
   });
 
+// ── Google OAuth ─────────────────────────────────────────────
+export const googleAuth = (idToken) =>
+  request('/api/auth/google', {
+    method: 'POST',
+    body: JSON.stringify({ idToken }),
+  });
+
+export const completeGoogleProfile = (phone, name) =>
+  request('/api/auth/google/complete', {
+    method: 'PUT',
+    body: JSON.stringify({ phone, name }),
+  });
+
+// ── Location ─────────────────────────────────────────────────
+export const searchLocations = (query) =>
+  request(`/api/location/search?q=${encodeURIComponent(query)}`);
+
+export const reverseGeocode = (lat, lng) =>
+  request(`/api/location/reverse-geocode?lat=${lat}&lng=${lng}`);
+
+export const getMapsKey = () =>
+  request('/api/location/maps-key');
+
 // ── Products ─────────────────────────────────────────────────
 export const fetchProducts = (params = {}) => {
   const qs = new URLSearchParams(params).toString();

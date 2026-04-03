@@ -55,6 +55,26 @@ CREATE INDEX IF NOT EXISTS idx_cprofiles_phone_text
 CREATE INDEX IF NOT EXISTS idx_products_status_active
   ON products(status, is_active);
 
+-- ══════════════════════════════════════════════════════════════
+-- ── Fix 7: Google OAuth columns ──────────────────────────────
+-- ══════════════════════════════════════════════════════════════
+ALTER TABLE cprofiles
+  ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
+
+ALTER TABLE cprofiles
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
+ALTER TABLE cprofiles
+  ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+
+-- Unique index on google_id (partial — only non-null)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cprofiles_google_id
+  ON cprofiles(google_id) WHERE google_id IS NOT NULL;
+
+-- Index on email for fast lookup during Google auth
+CREATE INDEX IF NOT EXISTS idx_cprofiles_email
+  ON cprofiles(email) WHERE email IS NOT NULL;
+
 -- ── Verify: Run this to confirm everything worked ─────────────
 SELECT 'cprofiles.phone_text column' AS check_name,
        COUNT(*) > 0 AS passed
@@ -75,4 +95,11 @@ SELECT 'cprofiles phone_text unique constraint',
        COUNT(*) > 0
 FROM information_schema.table_constraints
 WHERE table_name = 'cprofiles'
-  AND constraint_name = 'cprofiles_phone_text_key';
+  AND constraint_name = 'cprofiles_phone_text_key'
+
+UNION ALL
+
+SELECT 'cprofiles.google_id column',
+       COUNT(*) > 0
+FROM information_schema.columns
+WHERE table_name = 'cprofiles' AND column_name = 'google_id';
