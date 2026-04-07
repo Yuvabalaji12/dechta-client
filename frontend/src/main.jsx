@@ -8,21 +8,24 @@ import { AuthProvider } from './contexts/AuthContext'
 import { ToastProvider } from './contexts/ToastContext'
 import { LocationProvider } from './contexts/LocationContext'
 import { ErrorBoundary } from './ErrorBoundary'
+import { BrowserRouter } from 'react-router-dom'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ThemeProvider>
-      <AuthProvider>
-        <CartProvider>
-          <ToastProvider>
-            <LocationProvider>
-              <ErrorBoundary>
-                <App />
-              </ErrorBoundary>
-            </LocationProvider>
-          </ToastProvider>
-        </CartProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <BrowserRouter>
+      <ThemeProvider>
+        <AuthProvider>
+          <CartProvider>
+            <ToastProvider>
+              <LocationProvider>
+                <ErrorBoundary>
+                  <App />
+                </ErrorBoundary>
+              </LocationProvider>
+            </ToastProvider>
+          </CartProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </BrowserRouter>
   </StrictMode>,
 )

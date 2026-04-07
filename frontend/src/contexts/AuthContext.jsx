@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { getProfile } from '../api/apiClient';
+import { getProfile, fetchAddresses as apiFetchAddresses, saveAddress as apiSaveAddress, deleteAddress as apiDeleteAddress } from '../api/apiClient';
 
 const AuthContext = createContext();
 
@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
 
         // Token exists — fetch profile from backend to restore user data
         getProfile()
-            .then((res) => {
+            .then(async (res) => {
                 if (res.success && res.data) {
                     const { full_name, phone, email } = res.data;
                     const name = full_name || '';
@@ -45,6 +45,21 @@ export function AuthProvider({ children }) {
                         transactions: savedWallet.transactions
                     }));
                     setIsLoggedIn(true);
+
+                    // Load addresses from backend
+                    try {
+                        const addrRes = await apiFetchAddresses();
+                        if (addrRes.success && Array.isArray(addrRes.data)) {
+                            setUserData(prev => ({
+                                ...prev,
+                                addresses: addrRes.data.map((a, i) => ({
+                                    ...a,
+                                    text: a.address_text,
+                                    selected: i === 0 || a.is_default,
+                                }))
+                            }));
+                        }
+                    } catch { /* non-fatal */ }
                 } else {
                     localStorage.removeItem('dechta_token');
                 }
@@ -107,7 +122,31 @@ export function AuthProvider({ children }) {
         });
     }, []);
 
-    const addAddress = useCallback((address) => {
+    const addAddress = useCallback(async (address) => {
+        try {
+            // Persist to backend if user is logged in
+            const token = localStorage.getItem('dechta_token');
+            if (token) {
+                const res = await apiSaveAddress(
+                    (address.tag || 'other').toLowerCase(),
+                    address.text || address.address_text || '',
+                    false
+                );
+                if (res.success && res.data) {
+                    setUserData(prev => ({
+                        ...prev,
+                        addresses: [
+                            ...prev.addresses.map(a => ({ ...a, selected: false })),
+                            { ...res.data, text: res.data.address_text, selected: true }
+                        ]
+                    }));
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('[AuthContext] addAddress backend failed, using local:', e.message);
+        }
+        // Fallback to local state (guest / offline)
         setUserData(prev => ({
             ...prev,
             addresses: [...prev.addresses, { ...address, id: Date.now(), selected: prev.addresses.length === 0 }]

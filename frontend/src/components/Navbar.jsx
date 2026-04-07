@@ -4,16 +4,19 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from '../contexts/LocationContext';
-import { fetchProducts } from '../api/apiClient';
+import { fetchSearchResults } from '../api/apiClient';
+import { useNavigate } from 'react-router-dom';
 
 export default function Navbar({ allProducts = [], onOpenProduct, onCartClick, onLoginClick, onProfileClick, onWishlistClick, onBookingsClick, onSupportClick, onLogoClick }) {
     const { isDark, toggleTheme } = useTheme();
     const { cartCount } = useCart();
     const { isLoggedIn, userData } = useAuth();
     const { deliveryAddress, setLocationModalOpen } = useLocation();
+    const navigate = useNavigate();
 
     const [searchQuery, setSearchQuery] = useState('');
-    const [suggestions, setSuggestions] = useState([]);
+    const [suggestions, setSuggestions] = useState({ categories: [], products: [] });
+    const [isLoading, setIsLoading] = useState(false);
     const searchContainerRef = useRef(null);
     const searchContainerMobileRef = useRef(null);
     const debounceRef = useRef(null);
@@ -73,14 +76,27 @@ export default function Navbar({ allProducts = [], onOpenProduct, onCartClick, o
     // Backend search with debounce
     const searchBackend = useCallback((query) => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
+
+        if (!query.trim()) {
+            setSuggestions({ categories: [], products: [] });
+            setIsLoading(false);
+            return;
+        }
+
+        setIsLoading(true);
         debounceRef.current = setTimeout(async () => {
             try {
-                const res = await fetchProducts({ search: query, limit: 10 });
-                if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-                    setSuggestions(res.data.slice(0, 8));
+                const res = await fetchSearchResults(query);
+                if (res.success && res.data) {
+                    setSuggestions({
+                        categories: res.data.suggested_categories || [],
+                        products: res.data.products || []
+                    });
                 }
             } catch (e) {
                 console.warn('[Search] Backend search failed:', e.message);
+            } finally {
+                setIsLoading(false);
             }
         }, 300);
     }, []);
@@ -89,34 +105,15 @@ export default function Navbar({ allProducts = [], onOpenProduct, onCartClick, o
     const handleSearch = (e) => {
         const query = e.target.value;
         setSearchQuery(query);
-
-        if (query.trim().length > 0) {
-            // First: try instant client-side filter
-            const lowercaseQuery = query.toLowerCase();
-            const localResults = allProducts.filter(product =>
-                product.name && product.name.toLowerCase().includes(lowercaseQuery)
-            ).slice(0, 8);
-
-            if (localResults.length > 0) {
-                setSuggestions(localResults);
-            } else {
-                // Fallback: query the backend API
-                searchBackend(query.trim());
-            }
-        } else {
-            setSuggestions([]);
-            if (debounceRef.current) clearTimeout(debounceRef.current);
-        }
+        searchBackend(query);
     };
 
     // Handle clicking a suggestion
     const handleSuggestionClick = (product) => {
         setSearchQuery('');
-        setSuggestions([]);
+        setSuggestions({ categories: [], products: [] });
         setIsFocused(false);
-        if (onOpenProduct) {
-            onOpenProduct(product);
-        }
+        navigate(`/product/${product.id}`);
     };
 
     // Global click listener to close suggestions when clicking outside
@@ -124,7 +121,7 @@ export default function Navbar({ allProducts = [], onOpenProduct, onCartClick, o
         const handleClickOutside = (event) => {
             if (searchContainerRef.current && !searchContainerRef.current.contains(event.target) &&
                 searchContainerMobileRef.current && !searchContainerMobileRef.current.contains(event.target)) {
-                setSuggestions([]);
+                setSuggestions({ categories: [], products: [] });
             }
         };
 
@@ -179,26 +176,67 @@ export default function Navbar({ allProducts = [], onOpenProduct, onCartClick, o
                     />
 
                     {/* Desktop Search Suggestions Dropdown */}
-                    {suggestions.length > 0 && isFocused && (
-                        <div className="absolute top-14 left-0 w-full bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                            {suggestions.map((item) => (
-                                <div
-                                    key={item.id}
-                                    onClick={() => handleSuggestionClick(item)}
-                                    className="flex items-center gap-4 p-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors border-b border-gray-50 dark:border-slate-700/50 last:border-0"
-                                >
-                                    <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
-                                        <img src={getProductImage(item)} alt={item.name} className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal p-1" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate">{item.name}</h4>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate capitalize">{item.category || (item.is_bulk ? 'Bulk Order' : 'Product')}</p>
-                                    </div>
-                                    <div className="font-bold text-sm text-cyan-600 dark:text-cyan-400">
-                                        ₹{(item.selling_price || item.price || 0).toLocaleString('en-IN')}
-                                    </div>
+                    {(suggestions?.categories?.length > 0 || suggestions?.products?.length > 0 || isLoading) && isFocused && (
+                        <div className="absolute top-14 left-0 w-full bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 overflow-hidden z-[200] animate-in fade-in slide-in-from-top-2 duration-200">
+
+                            {isLoading && (
+                                <div className="p-4 flex items-center justify-center gap-2 text-sm text-gray-500">
+                                    <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                                    Searching...
                                 </div>
-                            ))}
+                            )}
+
+                            {!isLoading && suggestions?.categories?.length > 0 && (
+                                <div className="bg-gray-50 dark:bg-slate-900 border-b border-gray-100 dark:border-slate-700 p-2">
+                                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-1">Suggested Categories</div>
+                                    {suggestions.categories.map((cat) => (
+                                        <div
+                                            key={cat.id}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                setSearchQuery('');
+                                                setSuggestions({ categories: [], products: [] });
+                                                setIsFocused(false);
+                                                navigate(`/category/${cat.id}`);
+                                            }}
+                                            className="flex items-center gap-3 px-3 py-2 hover:bg-gray-200 dark:hover:bg-slate-800 cursor-pointer rounded-lg transition-colors"
+                                        >
+                                            <Search className="w-4 h-4 text-gray-400" />
+                                            <span className="text-sm font-bold text-gray-800 dark:text-gray-200">{cat.name}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {!isLoading && suggestions?.products?.length > 0 && (
+                                <div className="p-2">
+                                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-1 mt-1">Products</div>
+                                    {suggestions.products.map((item) => (
+                                        <div
+                                            key={item.id}
+                                            onClick={() => handleSuggestionClick(item)}
+                                            className="flex items-center gap-4 p-2 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors rounded-lg"
+                                        >
+                                            <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
+                                                <img src={getProductImage(item)} alt={item.name} className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal p-1" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate">{item.name}</h4>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate capitalize">{item.category || (item.is_bulk ? 'Bulk Order' : 'Product')}</p>
+                                            </div>
+                                            <div className="font-bold text-sm text-cyan-600 dark:text-cyan-400">
+                                                ₹{(item.selling_price || item.price || 0).toLocaleString('en-IN')}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {!isLoading && suggestions?.categories?.length === 0 && suggestions?.products?.length === 0 && searchQuery && (
+                                <div className="p-4 text-center text-sm text-gray-500">
+                                    No results found for "{searchQuery}"
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -241,26 +279,66 @@ export default function Navbar({ allProducts = [], onOpenProduct, onCartClick, o
                         />
 
                         {/* Mobile Search Suggestions Dropdown */}
-                        {suggestions.length > 0 && isFocused && (
-                            <div className="absolute top-12 left-0 w-full bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                                {suggestions.map((item) => (
-                                    <div
-                                        key={item.id}
-                                        onClick={() => handleSuggestionClick(item)}
-                                        className="flex items-center gap-3 p-2.5 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors border-b border-gray-50 dark:border-slate-700/50 last:border-0"
-                                    >
-                                        <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
-                                            <img src={getProductImage(item)} alt={item.name} className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal p-1" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <h4 className="text-[13px] font-bold text-gray-900 dark:text-white truncate">{item.name}</h4>
-                                            <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate capitalize">{item.category || (item.is_bulk ? 'Bulk Order' : 'Product')}</p>
-                                        </div>
-                                        <div className="font-bold text-[13px] text-cyan-600 dark:text-cyan-400">
-                                            ₹{(item.selling_price || item.price || 0).toLocaleString('en-IN')}
-                                        </div>
+                        {(suggestions?.categories?.length > 0 || suggestions?.products?.length > 0 || isLoading) && isFocused && (
+                            <div className="absolute top-12 left-0 w-full bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 overflow-hidden z-[200] animate-in fade-in slide-in-from-top-2 duration-200 max-h-[70vh] overflow-y-auto">
+
+                                {isLoading && (
+                                    <div className="p-4 flex items-center justify-center gap-2 text-sm text-gray-500">
+                                        <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
                                     </div>
-                                ))}
+                                )}
+
+                                {!isLoading && suggestions?.categories?.length > 0 && (
+                                    <div className="bg-gray-50 dark:bg-slate-900 border-b border-gray-100 dark:border-slate-700 p-2">
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 mb-1">Categories</div>
+                                        {suggestions.categories.map((cat) => (
+                                            <div
+                                                key={cat.id}
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    setSearchQuery('');
+                                                    setSuggestions({ categories: [], products: [] });
+                                                    setIsFocused(false);
+                                                    navigate(`/category/${cat.id}`);
+                                                }}
+                                                className="flex items-center gap-2 px-2 py-2 hover:bg-gray-200 dark:hover:bg-slate-800 cursor-pointer rounded-md transition-colors"
+                                            >
+                                                <Search className="w-3 h-3 text-gray-400" />
+                                                <span className="text-[13px] font-bold text-gray-800 dark:text-gray-200">{cat.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {!isLoading && suggestions?.products?.length > 0 && (
+                                    <div className="p-2">
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2 mb-1 mt-1">Products</div>
+                                        {suggestions.products.map((item) => (
+                                            <div
+                                                key={item.id}
+                                                onClick={() => handleSuggestionClick(item)}
+                                                className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors rounded-md"
+                                            >
+                                                <div className="w-10 h-10 rounded-md bg-gray-100 dark:bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
+                                                    <img src={getProductImage(item)} alt={item.name} className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal p-1" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-[13px] font-bold text-gray-900 dark:text-white truncate">{item.name}</h4>
+                                                    <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate capitalize">{item.category || (item.is_bulk ? 'Bulk Order' : 'Product')}</p>
+                                                </div>
+                                                <div className="font-bold text-[13px] text-cyan-600 dark:text-cyan-400">
+                                                    ₹{(item.selling_price || item.price || 0).toLocaleString('en-IN')}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {!isLoading && suggestions?.categories?.length === 0 && suggestions?.products?.length === 0 && searchQuery && (
+                                    <div className="p-3 text-center text-xs text-gray-500">
+                                        No results
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

@@ -132,6 +132,15 @@ export default function BookingsView({ isPage = false, onBack }) {
                                             </div>
                                         </div>
                                     )}
+                                    {!b.isScheduled && b.estimated_eta && (
+                                        <div className="flex items-center gap-2 p-2.5 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/20 shadow-sm animate-pulse">
+                                            <div className="p-1.5 bg-indigo-500 rounded-lg"><Clock className="w-3 h-3 text-white" /></div>
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-wider">Estimated Arrival</p>
+                                                <p className="text-xs font-black dark:text-white">{b.estimated_eta}</p>
+                                            </div>
+                                        </div>
+                                    )}
                                     {b.instructions && (
                                         <div className="p-3 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-100 dark:border-slate-800">
                                             <div className="flex items-center gap-2 mb-2"><FileText className="w-3 h-3 text-gray-400" /><span className="text-[10px] font-black uppercase text-gray-400">Delivery Instructions</span></div>

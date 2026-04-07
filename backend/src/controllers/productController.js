@@ -236,6 +236,54 @@ const getCategories = asyncHandler(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────
+// GET /api/products/grouped
+// Returns products bucketed by category for homepage sections:
+// [ { category, display_name, count, products[] }, ... ]
+// ─────────────────────────────────────────────────────────────
+const getGroupedProducts = asyncHandler(async (req, res) => {
+  const perCat = Math.min(Number(req.query.limit) || 12, 30);
+
+  let { rows } = await pool.query(
+    `${BASE_SELECT}
+     ORDER BY p.is_boosted DESC, p.created_at DESC
+     LIMIT 500`
+  );
+
+  // ── SAMPLE MODE ──────────────────────────────────────────────
+  if (rows.length === 0) {
+    const sample = await pool.query(
+      `SELECT p.*, v.owner_name, v.shop_name, v.location, v.area, v.shop_address, v.self_delivery
+       FROM products p
+       LEFT JOIN vendors v ON v.id = p.vendor_id
+       WHERE p.is_active = true
+       ORDER BY p.created_at DESC LIMIT 200`
+    );
+    rows = sample.rows;
+    console.log('[SAMPLE MODE] getGroupedProducts count:', rows.length);
+  }
+  // ── END SAMPLE MODE ──────────────────────────────────────────
+
+  // Group in JS
+  const map = new Map();
+  for (const row of rows) {
+    const cat = (row.category || 'other').toLowerCase();
+    if (!map.has(cat)) map.set(cat, []);
+    if (map.get(cat).length < perCat) map.get(cat).push(mapProduct(row));
+  }
+
+  const grouped = Array.from(map.entries())
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([category, products]) => ({
+      category,
+      display_name: category.charAt(0).toUpperCase() + category.slice(1),
+      count: products.length,
+      products,
+    }));
+
+  return ok(res, grouped);
+});
+
+// ─────────────────────────────────────────────────────────────
 // GET /api/vendors/active  (list of vendors with products)
 // Used by HomePage to show vendor selector
 // ─────────────────────────────────────────────────────────────
@@ -296,11 +344,60 @@ const getVendorProducts = asyncHandler(async (req, res) => {
   return ok(res, rows.map(mapProduct));
 });
 
+// ─────────────────────────────────────────────────────────────
+// GET /api/products/search?q={keyword}
+// Category-Aware Auto-Suggest Search powered by FTS & JSONB
+// ─────────────────────────────────────────────────────────────
+const getSearchResults = asyncHandler(async (req, res) => {
+  const keyword = req.query.q?.trim() || '';
+  if (!keyword) {
+    return ok(res, { suggested_categories: [], products: [] });
+  }
+
+  // 1. Category matched? (Using ILIKE on category + JSONB search_tags)
+  const catRes = await pool.query(`
+    SELECT DISTINCT category 
+    FROM products 
+    WHERE category ILIKE $1 
+       OR EXISTS (
+           SELECT 1 
+           FROM jsonb_array_elements_text(search_tags) as tag 
+           WHERE tag ILIKE $1
+       )
+    LIMIT 3
+  `, [`%${keyword}%`]);
+
+  // Format categories nicely (capitalize first letter)
+  const suggested_categories = catRes.rows.map(r => ({
+    id: r.category,
+    name: r.category.charAt(0).toUpperCase() + r.category.slice(1)
+  }));
+
+  // 2. Fetch highly relevant products via Full-Text Search (FTS) OR wildcard
+  let prodRes = await pool.query(`
+    SELECT p.*, v.owner_name, v.shop_name, v.location, v.area, v.shop_address, v.self_delivery
+    FROM products p
+    LEFT JOIN vendors v ON v.id = p.vendor_id
+    WHERE p.fts_vector @@ websearch_to_tsquery('english', $1)
+       OR p.name ILIKE $2
+       OR p.category ILIKE $2
+    ORDER BY ts_rank(p.fts_vector, websearch_to_tsquery('english', $1)) DESC, p.created_at DESC
+    LIMIT 6
+  `, [keyword, `%${keyword}%`]);
+
+  return ok(res, {
+    suggested_categories,
+    products: prodRes.rows.map(mapProduct)
+  });
+});
+
 module.exports = {
   getProducts,
   getNearbyProducts,
   getProductById,
   getCategories,
+  getGroupedProducts,
+  getSearchResults,
   getActiveVendors,
   getVendorProducts,
 };

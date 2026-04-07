@@ -13,6 +13,8 @@ const productRoutes = require('./routes/productRoutes');
 const orderRoutes   = require('./routes/orderRoutes');
 const vendorRoutes    = require('./routes/vendorRoutes');
 const locationRoutes  = require('./routes/locationRoutes');
+const pricingRoutes   = require('./routes/pricingRoutes');
+const addressRoutes   = require('./routes/addressRoutes');
 const errorHandler    = require('./middleware/errorHandler');
 
 const app = express();
@@ -54,11 +56,13 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ── Routes ────────────────────────────────────────────────────
-app.use('/api/auth',     authLimiter, authRoutes);
-app.use('/api/products', apiLimiter,  productRoutes);
-app.use('/api/orders',   apiLimiter,  orderRoutes);
-app.use('/api/vendors',  apiLimiter,  vendorRoutes);
-app.use('/api/location', apiLimiter,  locationRoutes);
+app.use('/api/auth',      authLimiter, authRoutes);
+app.use('/api/products',  apiLimiter,  productRoutes);
+app.use('/api/orders',    apiLimiter,  orderRoutes);
+app.use('/api/vendors',   apiLimiter,  vendorRoutes);
+app.use('/api/location',  apiLimiter,  locationRoutes);
+app.use('/api/pricing',   apiLimiter,  pricingRoutes);
+app.use('/api/addresses', apiLimiter,  addressRoutes);
 
 // ── Health Check ──────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, ShoppingBag, ChevronDown, ChevronUp, MapPin, Bike, Truck, Clock, Calendar, Mic, Square, Play, Trash2, AlertCircle, ThumbsUp } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, ShoppingBag, ChevronDown, ChevronUp, MapPin, Bike, Truck, Clock, Calendar, Mic, Square, Play, Trash2, AlertCircle, ThumbsUp, Loader } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { hardware } from '../data/products';
+import { fetchDeliveryCharge, fetchVehiclePricing } from '../api/apiClient';
 
 const AutoRickshawIcon = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -14,40 +15,45 @@ const AutoRickshawIcon = ({ className }) => (
     </svg>
 );
 
-const VEHICLES = [
+// Default vehicles shown before DB data loads (matches vehicle_pricing seed)
+const DEFAULT_VEHICLES = [
     {
-        type: 'bike',
-        name: 'Two-Wheeler',
+        type: '2w',
+        name: 'Two Wheeler (2W)',
         icon: Bike,
         color: 'text-green-600',
         desc: 'Up to 20kg',
         tier: 1,
+        base_fare: 29,
         options: [
-            { id: 'bike_standard', name: 'Standard Delivery', fee: 29, desc: '~30 mins' }
+            { id: '2w_standard', name: 'Standard Delivery', fee: 29, desc: '~30 mins' }
         ]
     },
     {
-        type: 'auto',
-        name: 'Three-Wheeler',
+        type: '3w',
+        name: 'Three Wheeler (Auto) (3W)',
         icon: AutoRickshawIcon,
         color: 'text-blue-600',
         desc: 'Up to 500kg',
         tier: 2,
+        base_fare: 149,
         options: [
-            { id: 'auto_open', name: 'Open Vehicle', fee: 149, desc: '~45 mins' },
-            { id: 'auto_closed', name: 'Closed Box', fee: 179, desc: 'Weatherproof' }
+            { id: '3w_standard', name: 'Standard Auto', fee: 149, desc: '~45 mins' }
         ]
     },
     {
-        type: 'truck',
-        name: 'Mini Truck',
+        type: '4w',
+        name: '4 Wheeler Cargo',
         icon: Truck,
         color: 'text-orange-600',
-        desc: 'Up to 750kg',
+        desc: 'Heavy cargo',
         tier: 3,
+        base_fare: 399,
         options: [
-            { id: 'truck_open', name: 'Open Vehicle', fee: 399, desc: '~60 mins' },
-            { id: 'truck_closed', name: 'Closed Box', fee: 449, desc: 'Fully Covered' }
+            { id: '4w_750kg', name: '4 Wheeler - 750 kg', fee: 399, desc: 'Small Items' },
+            { id: '4w_14ton', name: '4 Wheeler - 1.4 Ton', fee: 499, desc: 'Medium Cargo' },
+            { id: '4w_17ton', name: '4 Wheeler - 1.7 Ton', fee: 599, desc: 'Large Cargo' },
+            { id: '4w_25ton', name: '4 Wheeler - 2.5 Ton', fee: 799, desc: 'Extra Large' }
         ]
     }
 ];
@@ -60,6 +66,14 @@ export default function CheckoutModal({ open, onClose, onPay }) {
     // Delivery Vehicle State
     const [expandedVehicleType, setExpandedVehicleType] = useState(null);
     const [activeVehicleOptionId, setActiveVehicleOptionId] = useState(null);
+
+    // Vehicles loaded from backend
+    const [vehicles, setVehicles] = useState(DEFAULT_VEHICLES);
+
+    // Delivery fee state
+    const [deliveryFee, setDeliveryFee] = useState(DEFAULT_VEHICLES[0].options[0].fee);
+    const [feeLoading, setFeeLoading] = useState(false);
+    const feeAbortRef = useRef(null);
 
     // Address modal state
     const [showAddrForm, setShowAddrForm] = useState(false);
@@ -131,28 +145,90 @@ export default function CheckoutModal({ open, onClose, onPay }) {
 
     const tier = getMaxTier();
 
+    // Load vehicle pricing from backend on mount
+    useEffect(() => {
+        fetchVehiclePricing()
+            .then(res => {
+                if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+                    // Merge DB pricing into our UI vehicle list
+                    setVehicles(prev => prev.map(v => {
+                        const dbRow = res.data.find(r => r.vehicle_type === v.type);
+                        if (!dbRow) return v;
+                        return {
+                            ...v,
+                            base_fare: Number(dbRow.base_fare),
+                            options: v.options.map((opt, i) => ({
+                                ...opt,
+                                fee: i === 0
+                                    ? Number(dbRow.base_fare)
+                                    : Number(dbRow.base_fare) + (i * 30)
+                            }))
+                        };
+                    }));
+                }
+            })
+            .catch(() => { /* use defaults */ });
+    }, []);
+
     // Initialize defaults when modal opens
     useEffect(() => {
         if (open && !activeVehicleOptionId) {
-            const recommendedVehicle = VEHICLES.find(v => v.tier >= tier) || VEHICLES[VEHICLES.length - 1];
+            const recommendedVehicle = vehicles.find(v => v.tier >= tier) || vehicles[vehicles.length - 1];
             setExpandedVehicleType(recommendedVehicle.type);
             setActiveVehicleOptionId(recommendedVehicle.options[0].id);
+            setDeliveryFee(recommendedVehicle.options[0].fee);
         }
-    }, [open, tier, activeVehicleOptionId]);
+    }, [open, tier, vehicles, activeVehicleOptionId]);
+
+    // Recalculate delivery fee whenever vehicle option or address changes
+    const selectedAddr = userData.addresses.find(a => a.selected);
+    useEffect(() => {
+        if (!open || !activeVehicleOptionId) return;
+
+        const vehicleType = activeVehicleOptionId.split('_')[0]; // 'bike', 'auto', 'truck'
+
+        // Use vendor lat/lng from first cart item if available
+        // Fallback: use static fee from the selected option
+        const firstItem = cartItems[0];
+        const originLat = firstItem?.vendor_lat;
+        const originLng = firstItem?.vendor_lng;
+
+        // Destination: prefer geocoded coords stored on address, fallback not available
+        const destLat = selectedAddr?.lat;
+        const destLng = selectedAddr?.lng;
+
+        if (originLat && originLng && destLat && destLng) {
+            // Cancel previous in-flight request
+            if (feeAbortRef.current) clearTimeout(feeAbortRef.current);
+            setFeeLoading(true);
+
+            feeAbortRef.current = setTimeout(() => {
+                fetchDeliveryCharge(vehicleType, originLat, originLng, destLat, destLng)
+                    .then(res => {
+                        if (res.success && res.data?.delivery_charge != null) {
+                            // Find premium for the specific option over the vehicle base fare
+                            const vCategory = vehicles.find(v => v.type === vehicleType);
+                            const opt = vCategory?.options.find(o => o.id === activeVehicleOptionId);
+                            const premium = (opt && vCategory) ? (opt.fee - vCategory.base_fare) : 0;
+                            
+                            setDeliveryFee(Math.round(res.data.delivery_charge) + premium);
+                        }
+                    })
+                    .catch(() => { /* keep current fee */ })
+                    .finally(() => setFeeLoading(false));
+            }, 400); // debounce 400ms
+        } else {
+            // No coords available — use static fee from selected option
+            for (const v of vehicles) {
+                const opt = v.options.find(o => o.id === activeVehicleOptionId);
+                if (opt) { setDeliveryFee(opt.fee); break; }
+            }
+        }
+    }, [open, activeVehicleOptionId, selectedAddr, cartItems, vehicles]);
 
     if (!open) return null;
 
-    // Calculate delivery fee
-    let deliveryFee = 0;
-    for (const v of VEHICLES) {
-        const option = v.options.find(o => o.id === activeVehicleOptionId);
-        if (option) {
-            deliveryFee = option.fee;
-            break;
-        }
-    }
-
-    const selectedAddr = userData.addresses.find(a => a.selected);
+    const selectedAddr2 = userData.addresses.find(a => a.selected);
 
     // Suggestion items — pick items not already in cart
     const cartIds = new Set(cartItems.map(i => i.id));
@@ -162,13 +238,16 @@ export default function CheckoutModal({ open, onClose, onPay }) {
         if (!addrText.trim()) return;
         addAddress({ tag: addrTag, text: addrText.trim() });
         setAddrText('');
-        setAddrTag('Home');
+        setAddrTag('home');
         setShowAddrForm(false);
     };
 
     const toggleVehicleType = (type) => {
         setExpandedVehicleType(expandedVehicleType === type ? null : type);
     };
+
+    // Alias for JSX usage
+    const VEHICLES = vehicles;
 
     return (
         <div className="fixed inset-0 z-[210] bg-gray-100 dark:bg-slate-950">
@@ -277,7 +356,7 @@ export default function CheckoutModal({ open, onClose, onPay }) {
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Tag</label>
                                         <div className="flex gap-2">
-                                            {['Home', 'Work', 'Other'].map(tag => (
+                                            {['home', 'office', 'other'].map(tag => (
                                                 <button key={tag} type="button" onClick={() => setAddrTag(tag)}
                                                     className={`flex-1 py-2 border rounded-lg text-sm font-bold transition-colors ${addrTag === tag
                                                         ? 'bg-black text-white border-black dark:bg-white dark:text-black dark:border-white'
@@ -288,7 +367,7 @@ export default function CheckoutModal({ open, onClose, onPay }) {
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Address Details</label>
+                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Address</label>
                                         <textarea rows="3" value={addrText} onChange={e => setAddrText(e.target.value)}
                                             className="w-full bg-white dark:bg-slate-800 dark:text-white border border-gray-200 dark:border-slate-700 rounded-lg px-4 py-3 font-medium focus:outline-none focus:border-black dark:focus:border-white transition-colors resize-none"
                                             placeholder="House No, Street, Area, City..." />
@@ -593,7 +672,12 @@ export default function CheckoutModal({ open, onClose, onPay }) {
                                 </div>
                                 <div className="flex justify-between text-sm mb-2">
                                     <span className="text-gray-500 dark:text-gray-400">Delivery Fee</span>
-                                    <span className="font-bold dark:text-white">₹{deliveryFee}</span>
+                                    <span className="font-bold dark:text-white flex items-center gap-1">
+                                        {feeLoading
+                                            ? <Loader className="w-3 h-3 animate-spin text-cyan-500" />
+                                            : `₹${deliveryFee}`
+                                        }
+                                    </span>
                                 </div>
                                 {tipAmount > 0 && (
                                     <div className="flex justify-between text-sm mb-2 text-cyan-600 font-bold">
@@ -624,12 +708,13 @@ export default function CheckoutModal({ open, onClose, onPay }) {
                                 voiceUrl: voiceUrl
                             };
                             const deliverySchedule = isScheduled ? { date: scheduleDate, time: scheduleTime } : null;
-                             onPay({
+                            onPay({
                                  tip: tipAmount,
                                  instructions: finalInstructions,
                                  schedule: deliverySchedule,
                                  gst: hasGst ? gstData : null,
-                                 address: selectedAddr?.address_text || '',
+                                 address: selectedAddr2?.address_text || selectedAddr2?.text || '',
+                                 delivery_fee: deliveryFee,
                              });
                         }} className="w-full bg-qc-yellow text-black py-4 rounded-xl font-bold hover:bg-qc-primary transition-all shadow-lg text-lg flex items-center justify-center gap-2">
                             Proceed to Pay

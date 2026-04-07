@@ -4,14 +4,16 @@ import { useCart } from './contexts/CartContext';
 import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { hardware, services, serviceData } from './data/products';
-import { fetchProducts, fetchActiveVendors, fetchVendorProducts, placeOrder } from './api/apiClient';
+import { fetchProducts, fetchActiveVendors, fetchVendorProducts, placeOrder, fetchGroupedProducts } from './api/apiClient';
 import LoadingScreen from './components/LoadingScreen';
 import Navbar from './components/Navbar';
 import CategoryBar from './components/CategoryBar';
 import HomePage from './pages/HomePage';
+import CategoryPage from './pages/CategoryPage';
 import ProductPage from './pages/ProductPage';
 import InteriorsPage from './pages/InteriorsPage';
 import BulkOrderPage from './pages/BulkOrderPage';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import CartDrawer from './components/CartDrawer';
 import LoginModal from './components/LoginModal';
 import CheckoutModal from './components/CheckoutModal';
@@ -43,6 +45,7 @@ import ProfileView from './components/views/ProfileView';
 import PrivacyPolicyView from './components/views/PrivacyPolicyView';
 
 export default function App() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState('home');
   const [activeCategory, setActiveCategory] = useState('all');
@@ -71,6 +74,7 @@ export default function App() {
 
   const [activeVendors, setActiveVendors] = useState([]);
   const [liveProducts, setLiveProducts] = useState([]);
+  const [groupedProducts, setGroupedProducts] = useState([]);
   const [selectedVendor, setSelectedVendor] = useState(null);
 
   // ── Load products & vendors from backend on mount ─────────
@@ -95,6 +99,15 @@ export default function App() {
         }
       })
       .catch((e) => console.warn('[API] fetchActiveVendors failed:', e.message));
+
+    fetchGroupedProducts()
+      .then((res) => {
+        if (res.success && Array.isArray(res.data)) {
+          setGroupedProducts(res.data);
+          console.log('[APP] Grouped Products loaded:', res.data.length);
+        }
+      })
+      .catch((e) => console.warn('[API] fetchGroupedProducts failed:', e.message));
   }, []);
 
   // ── Load products for a specific vendor shop ──────────────
@@ -110,7 +123,7 @@ export default function App() {
       .catch((e) => console.warn('[API] fetchVendorProducts failed:', e.message));
   }, []);
   const { showToast } = useToast();
-  const { addToCart: cartAddToCart, clearCart } = useCart();
+  const { addToCart: cartAddToCart, clearCart, cart } = useCart();
   const { authLoading, isLoggedIn, userData, toggleWishlist, addBooking } = useAuth();
 
   useEffect(() => {
@@ -128,7 +141,8 @@ export default function App() {
     });
     setCurrentPage('product');
     window.scrollTo({ top: 0, behavior: 'auto' });
-  }, [selectedVendor]);
+    navigate('/');
+  }, [selectedVendor, navigate]);
 
   const openInteriors = useCallback(() => {
     document.documentElement.scrollTop = 0;
@@ -136,14 +150,16 @@ export default function App() {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     setCurrentPage('interiors');
     setActiveCategory('services');
-  }, []);
+    navigate('/');
+  }, [navigate]);
 
   const goHome = useCallback((targetCat = 'all') => {
     setCurrentPage('home');
     if (targetCat) setActiveCategory(targetCat);
     setCurrentProduct(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+    navigate('/');
+  }, [navigate]);
 
   const handleWishlistClick = useCallback((product, event) => {
     // Determine the animation start coordinates
@@ -204,10 +220,11 @@ export default function App() {
     if (isMobile()) {
       setCurrentPage(page);
       window.scrollTo({ top: 0, behavior: 'auto' });
+      navigate('/');
     } else {
       desktopModalSetter(true);
     }
-  }, []);
+  }, [navigate]);
 
   const handleAddToCart = useCallback((item) => {
     // Enrich cart item with full product data from liveProducts
@@ -227,9 +244,34 @@ export default function App() {
     setCartNotifItem(enriched);
   }, [cartAddToCart, liveProducts]);
 
+  const handleBuyNow = useCallback((item) => {
+    // Enrich like handleAddToCart
+    const fullProduct = liveProducts.find(p => String(p.id) === String(item.id));
+    const enriched = fullProduct ? {
+      ...item,
+      vendor_id:     fullProduct.vendor_id     || null,
+      selling_price: fullProduct.selling_price  || item.price,
+      price:         item.price || fullProduct.selling_price || fullProduct.price,
+      images:        fullProduct.images         || [],
+      category:      fullProduct.category       || '',
+      shop_name:     fullProduct.shop_name      || null,
+    } : item;
+
+    // Only add if not already in cart
+    if (!cart[item.id]?.qty) {
+      cartAddToCart(enriched);
+    }
+    // Open checkout (or login)
+    if (isLoggedIn) {
+      setCheckoutOpen(true);
+    } else {
+      setLoginOpen(true);
+    }
+  }, [cartAddToCart, liveProducts, cart, isLoggedIn]);
+
   const handlePlaceOrder = useCallback(async (items, total, extraData) => {
-    const bId = Math.floor(1000 + Math.random() * 9000);
-    setBookingId(bId);
+    let bId = Math.floor(1000 + Math.random() * 9000);
+    let estimatedEta = null;
 
     // ── Save order to backend DB so vendor can see it ─────────
     try {
@@ -240,6 +282,10 @@ export default function App() {
           price:        i.price || i.selling_price,
           qty:          i.qty || 1,
           vendor_id:    i.vendor_id || null,
+          vendor_lat:   i.vendor_lat || null,
+          vendor_lng:   i.vendor_lng || null,
+          dest_lat:     extraData?.addressLat || null,
+          dest_lng:     extraData?.addressLng || null,
           images:       i.images,
         })),
         total_amount:     total,
@@ -252,12 +298,16 @@ export default function App() {
       };
       const res = await placeOrder(orderPayload);
       if (res.success) {
-        console.log('[ORDER] Saved to DB, bookingId:', res.data?.bookingId);
+        if (res.data?.bookingId) bId = res.data.bookingId;
+        if (res.data?.estimated_eta) estimatedEta = res.data.estimated_eta;
+        console.log('[ORDER] Saved to DB, bookingId:', bId, 'ETA:', estimatedEta);
       }
     } catch (e) {
       // Non-blocking — UI still completes even if API fails
       console.warn('[ORDER] API save failed (order still shown locally):', e.message);
     }
+
+    setBookingId(bId);
 
     // ── Update local state for immediate UI feedback ──────────
     addBooking({
@@ -270,7 +320,8 @@ export default function App() {
       tip: extraData?.tip || 0,
       instructions: extraData?.instructions || null,
       isScheduled: !!extraData?.schedule,
-      gst: extraData?.gst || null
+      gst: extraData?.gst || null,
+      estimated_eta: estimatedEta
     });
 
     clearCart();
@@ -293,6 +344,7 @@ export default function App() {
       setActiveCategory('hire');
       setCurrentPage('hire');
       window.scrollTo({ top: 0, behavior: 'auto' });
+      navigate('/');
       return;
     }
 
@@ -328,7 +380,7 @@ export default function App() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     }
-  }, [currentPage, goHome, openInteriors]);
+  }, [currentPage, goHome, openInteriors, navigate]);
 
   // Wait for both: app loading animation AND auth session check
   if (loading || authLoading) return <LoadingScreen />;
@@ -363,56 +415,79 @@ export default function App() {
         </>
       )}
 
-      {currentPage === 'home' && (
-        <CraneButton onClick={() => setCurrentPage('hire')} />
-      )}
+      <Routes>
+        <Route path="/category/:categoryId" element={
+          <CategoryPage
+            onOpenProduct={openProduct}
+            onAddToCart={handleAddToCart}
+            onWishlistClick={handleWishlistClick}
+            onNotifyClick={handleNotifyClick}
+          />
+        } />
+        <Route path="*" element={
+          <>
+            {currentPage === 'home' && (
+              <CraneButton onClick={() => { setCurrentPage('hire'); navigate('/'); }} />
+            )}
 
-      {currentPage === 'home' && (
-        <HomePage
-          hardware={hardware}
-          services={services}
-          liveProducts={liveProducts}
-          activeVendors={activeVendors}
-          selectedVendor={selectedVendor}
-          onSelectVendor={loadShopProducts}
-          onOpenProduct={openProduct}
-          onAddToCart={handleAddToCart}
-          onWishlistClick={handleWishlistClick}
-          onNotifyClick={handleNotifyClick}
-          onOpenDrawer={openDrawerForService}
-          onOpenHireMap={() => setCurrentPage('hire')}
-          onOpenInteriors={openInteriors}
-        />
-      )}
+            {currentPage === 'home' && (
+              <HomePage
+                hardware={hardware}
+                services={services}
+                liveProducts={liveProducts}
+                groupedProducts={groupedProducts}
+                activeVendors={activeVendors}
+                selectedVendor={selectedVendor}
+                onSelectVendor={loadShopProducts}
+                onOpenProduct={openProduct}
+                onAddToCart={handleAddToCart}
+                onWishlistClick={handleWishlistClick}
+                onNotifyClick={handleNotifyClick}
+                onOpenDrawer={openDrawerForService}
+                onOpenHireMap={() => { setCurrentPage('hire'); navigate('/'); }}
+                onOpenInteriors={openInteriors}
+              />
+            )}
 
-      {currentPage === 'hire' && (
-        <HireWorkerPage onBack={() => goHome('all')} />
-      )}
+            {currentPage === 'hire' && (
+              <HireWorkerPage onBack={() => goHome('all')} />
+            )}
 
-      {currentPage === 'product' && currentProduct && (
-        <ProductPage product={currentProduct} onBack={goHome} onAddToCart={handleAddToCart} onWishlistClick={handleWishlistClick} onNotifyClick={handleNotifyClick} />
-      )}
+            {currentPage === 'product' && currentProduct && (
+              <ProductPage
+                product={currentProduct}
+                onBack={goHome}
+                onAddToCart={handleAddToCart}
+                onBuyNow={handleBuyNow}
+                onWishlistClick={handleWishlistClick}
+                onNotifyClick={handleNotifyClick}
+                allProducts={liveProducts}
+                onOpenProduct={openProduct}
+              />
+            )}
 
+            {currentPage === 'interiors' && (
+              <InteriorsPage onBack={() => goHome('all')} onOpenConsultant={() => setConsultantModalOpen(true)} />
+            )}
 
-      {currentPage === 'interiors' && (
-        <InteriorsPage onBack={() => goHome('all')} onOpenConsultant={() => setConsultantModalOpen(true)} />
-      )}
+            {currentPage === 'wishlist' && (
+              <WishlistView liveProducts={liveProducts} openProduct={openProduct} isPage={true} onBack={goHome} />
+            )}
 
-      {currentPage === 'wishlist' && (
-        <WishlistView liveProducts={liveProducts} openProduct={openProduct} isPage={true} onBack={goHome} />
-      )}
+            {currentPage === 'bookings' && (
+              <BookingsView isPage={true} onBack={goHome} />
+            )}
 
-      {currentPage === 'bookings' && (
-        <BookingsView isPage={true} onBack={goHome} />
-      )}
+            {currentPage === 'profile' && (
+              <ProfileView isPage={true} onBack={goHome} />
+            )}
 
-      {currentPage === 'profile' && (
-        <ProfileView isPage={true} onBack={goHome} />
-      )}
-
-      {currentPage === 'privacy' && (
-        <PrivacyPolicyView onBack={goHome} />
-      )}
+            {currentPage === 'privacy' && (
+              <PrivacyPolicyView onBack={goHome} />
+            )}
+          </>
+        } />
+      </Routes>
 
       {currentPage !== 'privacy' && !hideGlobalUIOnMobile && (
         <Footer 
@@ -423,7 +498,12 @@ export default function App() {
       )}
 
       {/* Overlays */}
-      <CartNotification item={cartNotifItem} onClose={() => setCartNotifItem(null)} />
+      <CartNotification
+        item={cartNotifItem}
+        onClose={() => setCartNotifItem(null)}
+        onViewCart={() => setCartOpen(true)}
+        onBuyNow={handleBuyNow}
+      />
       <CartDrawer 
         open={cartOpen} 
         onClose={() => setCartOpen(false)} 

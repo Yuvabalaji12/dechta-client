@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Player } from '@lottiefiles/react-lottie-player';
 
 // Use onWishlistClick passed from App.jsx instead of direct context toggle
-export default function HomePage({ hardware, services, liveProducts = [], activeVendors = [], onOpenProduct, onAddToCart, onWishlistClick, onNotifyClick, onOpenDrawer, onOpenHireMap, onOpenInteriors, selectedVendor, onSelectVendor }) {
+export default function HomePage({ hardware, services, liveProducts = [], groupedProducts = [], activeVendors = [], onOpenProduct, onAddToCart, onWishlistClick, onNotifyClick, onOpenDrawer, onOpenHireMap, onOpenInteriors, selectedVendor, onSelectVendor }) {
     const { cart, updateQty } = useCart();
     const { userData } = useAuth();
     const hwRef = useRef(null);
@@ -355,43 +355,64 @@ export default function HomePage({ hardware, services, liveProducts = [], active
             </section>
 
 
-            {/* ====== HARDWARE STORE (Zepto-style vertical flow) ====== */}
-            <section className="slider-container relative group scroll-trigger">
-                <div className="flex justify-between items-end mb-6">
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Tools & Hardware</h2>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5 uppercase tracking-wider font-bold">Quick delivery to your site</p>
-                    </div>
-                </div>
-
-                {/* First Segment (Grid layout matching Zepto style) */}
-                <div ref={hwRef} id="hardware-slider" className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-0.5 md:gap-3 pb-8 bg-gray-100 dark:bg-slate-800 md:bg-transparent md:dark:bg-transparent -mx-4 md:mx-0 border-y border-gray-100 dark:border-slate-800 md:border-none">
-                    {liveProducts.length > 0 ? (
-                        (() => {
-                            const getIdx = () => {
-                                if (typeof window === 'undefined') return 18;
-                                const w = window.innerWidth;
-                                if (w >= 1280) return 18;
-                                if (w >= 1024) return 15;
-                                if (w >= 768) return 12;
-                                return 9;
-                            };
-                            return liveProducts.slice(0, getIdx()).map((p) => (
-                                <div key={p.id} className="relative bg-white dark:bg-slate-900 md:bg-transparent border-r border-b border-gray-100 dark:border-slate-800 md:border-none last:border-r-0 md:last:border-r-transparent">
-                                    {renderProductCard(p)}
+            {/* ====== HARDWARE STORE / CATEGORY SECTIONS ====== */}
+            <section className="relative group scroll-trigger">
+                {groupedProducts.length > 0 ? (
+                    groupedProducts.map((group, idx) => (
+                        <div key={group.category} className="mb-10" ref={idx === 0 ? hwRef : null}>
+                            <div className="flex justify-between items-end mb-4">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{group.display_name}</h2>
                                 </div>
-                            ));
-                        })()
-                    ) : (
-                        <div className="col-span-full py-12 flex flex-col items-center justify-center text-center">
-                            <div className="w-16 h-16 bg-gray-50 dark:bg-slate-900 rounded-full flex items-center justify-center mb-4">
-                                <ShieldCheck className="w-8 h-8 text-gray-300" />
                             </div>
-                            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200">No products found</h3>
-                            <p className="text-gray-500 dark:text-gray-400 text-sm max-w-xs mx-auto mt-1">Vendor products will appear here once they are added in the vendor portal.</p>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-0.5 md:gap-3 bg-gray-100 dark:bg-slate-800 md:bg-transparent md:dark:bg-transparent -mx-4 md:mx-0 border-y border-gray-100 dark:border-slate-800 md:border-none">
+                                {group.products.map(p => (
+                                    <div key={p.id} className="relative bg-white dark:bg-slate-900 md:bg-transparent border-r border-b border-gray-100 dark:border-slate-800 md:border-none last:border-r-0 md:last:border-r-transparent">
+                                        {renderProductCard(p)}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    )}
-                </div>
+                    ))
+                ) : (
+                    <div className="mb-12">
+                        <div className="flex justify-between items-end mb-6">
+                            <div>
+                                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Tools & Hardware</h2>
+                                <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5 uppercase tracking-wider font-bold">Quick delivery to your site</p>
+                            </div>
+                        </div>
+
+                        {/* First Segment (Grid layout matching Zepto style) */}
+                        <div ref={hwRef} id="hardware-slider" className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6 gap-0.5 md:gap-3 pb-8 bg-gray-100 dark:bg-slate-800 md:bg-transparent md:dark:bg-transparent -mx-4 md:mx-0 border-y border-gray-100 dark:border-slate-800 md:border-none">
+                            {liveProducts.length > 0 ? (
+                                (() => {
+                                    const getIdx = () => {
+                                        if (typeof window === 'undefined') return 18;
+                                        const w = window.innerWidth;
+                                        if (w >= 1280) return 18;
+                                        if (w >= 1024) return 15;
+                                        if (w >= 768) return 12;
+                                        return 9;
+                                    };
+                                    return liveProducts.slice(0, getIdx()).map((p) => (
+                                        <div key={p.id} className="relative bg-white dark:bg-slate-900 md:bg-transparent border-r border-b border-gray-100 dark:border-slate-800 md:border-none last:border-r-0 md:last:border-r-transparent">
+                                            {renderProductCard(p)}
+                                        </div>
+                                    ));
+                                })()
+                            ) : (
+                                <div className="col-span-full py-12 flex flex-col items-center justify-center text-center">
+                                    <div className="w-16 h-16 bg-gray-50 dark:bg-slate-900 rounded-full flex items-center justify-center mb-4">
+                                        <ShieldCheck className="w-8 h-8 text-gray-300" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200">No products found</h3>
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm max-w-xs mx-auto mt-1">Vendor products will appear here once they are added in the vendor portal.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Interiors Section (Integrated between rows) */}
                 <div className="py-8 scroll-trigger px-4 md:px-0">

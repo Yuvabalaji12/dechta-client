@@ -86,6 +86,9 @@ export const fetchNearbyProducts = (lat, lng, radius = 20) =>
 
 export const fetchCategories = () => request('/api/products/categories');
 
+export const fetchSearchResults = (query) =>
+  request(`/api/products/search?q=${encodeURIComponent(query)}`);
+
 // ── Vendors ──────────────────────────────────────────────────
 export const fetchActiveVendors = () => request('/api/vendors/active');
 
@@ -103,3 +106,36 @@ export const fetchMyOrders = () => request('/api/orders/my');
 
 // ── Health ───────────────────────────────────────────────────
 export const checkHealth = () => request('/api/health');
+
+// ── Products (grouped for homepage) ──────────────────────────
+export const fetchGroupedProducts = (limit = 12) =>
+  request(`/api/products/grouped?limit=${limit}`);
+
+// ── Pricing ───────────────────────────────────────────────────
+export const fetchVehiclePricing = () =>
+  request('/api/pricing/vehicles');
+
+export const fetchDeliveryCharge = (vehicleType, originLat, originLng, destLat, destLng) =>
+  request(
+    `/api/pricing/delivery?vehicle_type=${vehicleType}` +
+    `&origin_lat=${originLat}&origin_lng=${originLng}` +
+    `&dest_lat=${destLat}&dest_lng=${destLng}`
+  );
+
+// ── Addresses ─────────────────────────────────────────────────
+export const fetchAddresses = () => request('/api/addresses');
+
+export const saveAddress = (tag, address_text, is_default = false) =>
+  request('/api/addresses', {
+    method: 'POST',
+    body: JSON.stringify({ tag, address_text, is_default }),
+  });
+
+export const updateAddress = (id, updates) =>
+  request(`/api/addresses/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+
+export const deleteAddress = (id) =>
+  request(`/api/addresses/${id}`, { method: 'DELETE' });

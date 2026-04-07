@@ -1,17 +1,17 @@
-import { ArrowLeft, Star, ShoppingBag, Heart, Sparkles, Shield, Award, Box, Truck, Info, Store, ShieldCheck, Share2, Bell, Timer, Users } from 'lucide-react';
+import { ArrowLeft, Star, ShoppingBag, Heart, Sparkles, Shield, Award, Box, Truck, Info, Store, ShieldCheck, Share2, Bell, Timer, Users, Zap, ChevronRight } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import gsap from 'gsap';
 
-export default function ProductPage({ product, onBack, onAddToCart, onWishlistClick, onNotifyClick }) {
+export default function ProductPage({ product, onBack, onAddToCart, onBuyNow, onWishlistClick, onNotifyClick, allProducts = [], onOpenProduct }) {
     const { cart, updateQty } = useCart();
     const { userData, addProductRating } = useAuth();
 
     // Scroll to top on mount
     useEffect(() => {
         window.scrollTo(0, 0);
-    }, []);
+    }, [product?.id]);
 
     const deliveryTime = useMemo(() => Math.floor(9 + Math.random() * 10), [product?.id]);
 
@@ -52,7 +52,6 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
 
     const allImages = useMemo(() => {
         const imgs = Array.isArray(product.images) ? product.images : (product.img ? [product.img] : []);
-        // Placeholders in case we don't have enough images
         const placeholders = [
             'https://images.unsplash.com/photo-1504148455328-c376907d081c?w=800',
             'https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=800',
@@ -60,7 +59,6 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
         ];
 
         let final = [...imgs];
-        // Ensure we show at least 3 photos
         let i = 0;
         while (final.length < 3) {
             final.push(placeholders[i % placeholders.length]);
@@ -69,44 +67,49 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
         return final.slice(0, 3);
     }, [product.images, product.img]);
 
+    // ── Similar products (same category, exclude current) ────
+    const similarProducts = useMemo(() => {
+        if (!product.category || !allProducts.length) return [];
+        return allProducts
+            .filter(p => p.category === product.category && String(p.id) !== String(product.id))
+            .slice(0, 12);
+    }, [product.category, product.id, allProducts]);
+
     const handleImageChange = (index) => {
         if (index === activeIndex) return;
-
-        // GSAP Animation for switching
         const tl = gsap.timeline();
         tl.to(mainImageRef.current, {
-            opacity: 0,
-            scale: 0.95,
-            duration: 0.2,
-            ease: "power2.in",
-            onComplete: () => {
-                setActiveIndex(index);
-            }
+            opacity: 0, scale: 0.95, duration: 0.2, ease: "power2.in",
+            onComplete: () => setActiveIndex(index)
         });
         tl.to(mainImageRef.current, {
-            opacity: 1,
-            scale: 1,
-            duration: 0.4,
-            ease: "power2.out"
+            opacity: 1, scale: 1, duration: 0.4, ease: "power2.out"
         });
     };
 
-    const getImg = () => {
-        return allImages[activeIndex];
+    const getImg = () => allImages[activeIndex];
+
+    const getSimilarImg = (p) => {
+        if (Array.isArray(p.images) && p.images[0]) return p.images[0];
+        return p.img || 'https://images.unsplash.com/photo-1504148455328-c376907d081c?w=200';
     };
 
     const maskName = (str) => {
         if (!str) return "xxxx xxxx";
         const parts = str.split(' ');
-        if (parts.length > 1) {
-            return `${parts[0]} xxxx`;
-        }
+        if (parts.length > 1) return `${parts[0]} xxxx`;
         const half = Math.ceil(str.length / 2);
         return str.substring(0, half) + "xxxx";
     };
 
     const shopName = product.vendorName || "Ganesh Hardwares";
-    const sellerName = product.sellerName || shopName.split(' ')[0] || "Ganesh";
+
+    const handleBuyNow = () => {
+        if (qty === 0) {
+            onAddToCart({ id: product.id, name: product.name, price, img: getImg(), tier: 1 });
+        }
+        onBuyNow?.({ id: product.id, name: product.name, price, img: getImg(), tier: 1 });
+    };
 
     return (
         <main className="w-full min-h-screen bg-gray-50 dark:bg-slate-950 font-sans animate-slide-in-right pb-24 md:pb-10 z-50 relative pt-16 md:pt-28">
@@ -119,7 +122,6 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
                     <button className="flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors">
                         <Share2 className="w-4 h-4 text-gray-800 dark:text-gray-200" />
                     </button>
-                    {/* Replace the top right navbar wishlist button */}
                     <button onClick={(e) => onWishlistClick(product, e)} className={`p-2.5 rounded-full backdrop-blur-md transition-all shadow-sm ${isLiked ? 'bg-red-50 dark:bg-red-500/10 text-red-500' : 'bg-white/80 dark:bg-slate-800/80 text-gray-600 dark:text-gray-300 hover:text-red-500'}`}>
                         <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
                     </button>
@@ -132,7 +134,7 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
                     {/* Left Column: Image & Basic Info */}
                     <div className="w-full md:w-1/2 p-4 md:p-8 border-b md:border-b-0 md:border-r border-gray-100 dark:border-slate-800 flex flex-col items-center">
                         <div className="w-full flex gap-4 mb-8 h-[350px] md:h-[450px]">
-                            {/* Thumbnails Sidebar - "Side Small" */}
+                            {/* Thumbnails Sidebar */}
                             <div className="flex flex-col gap-3 shrink-0">
                                 {allImages.map((img, idx) => (
                                     <button
@@ -168,7 +170,6 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
                             <p className="text-lg text-gray-500 dark:text-gray-400 font-normal mb-6">
                                 {product.description || product.specs || "Premium Grade / Professional Choice / High Durability"}
                             </p>
-                            {/* Short description + Dimensions — vendor mapped fields */}
                             {(product.description || (product.length_cm && product.width_cm && product.height_cm)) && (
                                 <div className="mt-2 mb-4 space-y-1">
                                     {product.length_cm && product.width_cm && product.height_cm && (
@@ -209,7 +210,7 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
                     {/* Right Column: Pricing, Actions, Details */}
                     <div className="w-full md:w-1/2 p-6 md:p-10 flex flex-col">
 
-                        {/* Price & Add to Cart (Desktop) */}
+                        {/* Price & Buttons (Desktop) */}
                         <div className="bg-gray-50 dark:bg-slate-800/50 rounded-2xl p-6 mb-8 border border-gray-100 dark:border-slate-700/50">
                             <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-end gap-3">
@@ -224,23 +225,36 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
                             </div>
                             <p className="text-xs text-gray-500 font-medium mb-6">Inclusive of all taxes</p>
 
-                            <div className="hidden md:block">
+                            {/* Desktop: Add to Cart + Buy Now */}
+                            <div className="hidden md:flex gap-3">
                                 {product.outOfStock ? (
                                     <button onClick={() => onNotifyClick(product)}
-                                        className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 text-white px-10 py-4 rounded-xl text-sm font-bold shadow-lg shadow-orange-500/30 transition-transform active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wide">
+                                        className="flex-1 bg-orange-500 hover:bg-orange-600 text-white px-8 py-4 rounded-xl text-sm font-bold shadow-lg shadow-orange-500/30 transition-transform active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wide">
                                         <Bell className="w-5 h-5 flex-shrink-0" /> NOTIFY WHEN AVAILABLE
                                     </button>
                                 ) : qty > 0 ? (
-                                    <div className="flex items-center h-14 w-[160px] bg-cyan-600 rounded-xl shadow-lg overflow-hidden">
-                                        <button onClick={() => updateQty(product.id, -1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-xl">-</button>
-                                        <span className="w-1/3 font-bold text-white text-center text-lg">{qty}</span>
-                                        <button onClick={() => updateQty(product.id, 1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-xl">+</button>
-                                    </div>
+                                    <>
+                                        <div className="flex items-center h-14 w-[160px] bg-cyan-600 rounded-xl shadow-lg overflow-hidden shrink-0">
+                                            <button onClick={() => updateQty(product.id, -1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-xl">-</button>
+                                            <span className="w-1/3 font-bold text-white text-center text-lg">{qty}</span>
+                                            <button onClick={() => updateQty(product.id, 1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-xl">+</button>
+                                        </div>
+                                        <button onClick={handleBuyNow}
+                                            className="flex-1 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white px-8 py-4 rounded-xl text-sm font-bold shadow-lg shadow-cyan-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wide">
+                                            <Zap className="w-5 h-5" /> Buy Now
+                                        </button>
+                                    </>
                                 ) : (
-                                    <button onClick={() => onAddToCart({ id: product.id, name: product.name, price, img: getImg(), tier: 1 })}
-                                        className="w-full sm:w-auto bg-cyan-600 hover:bg-cyan-700 text-white px-10 py-4 rounded-xl text-sm font-bold shadow-lg shadow-cyan-600/30 transition-transform active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wide">
-                                        <ShoppingBag className="w-5 h-5 flex-shrink-0" /> Add To Cart
-                                    </button>
+                                    <>
+                                        <button onClick={() => onAddToCart({ id: product.id, name: product.name, price, img: getImg(), tier: 1 })}
+                                            className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white px-8 py-4 rounded-xl text-sm font-bold shadow-lg shadow-cyan-600/30 transition-transform active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wide">
+                                            <ShoppingBag className="w-5 h-5 flex-shrink-0" /> Add To Cart
+                                        </button>
+                                        <button onClick={handleBuyNow}
+                                            className="flex-1 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white px-8 py-4 rounded-xl text-sm font-bold shadow-lg shadow-cyan-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 uppercase tracking-wide">
+                                            <Zap className="w-5 h-5" /> Buy Now
+                                        </button>
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -288,41 +302,123 @@ export default function ProductPage({ product, onBack, onAddToCart, onWishlistCl
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Mobile Bottom Bar */}
-            <div className="md:hidden fixed bottom-0 left-0 w-full bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-5 py-4 pb-safe z-50 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)]">
-                <div className="flex justify-between items-center gap-4">
-                    <div className="flex flex-col">
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Price</span>
-                            <div className="flex items-center gap-1 bg-cyan-100 dark:bg-cyan-500/20 px-1.5 py-0.5 rounded flex-shrink-0">
-                                <Timer className="w-2.5 h-2.5 text-cyan-600 dark:text-cyan-400" />
-                                <span className="text-[8px] font-black text-cyan-700 dark:text-cyan-400 uppercase">{deliveryTime} MINS</span>
-                            </div>
+                {/* ══════════════════════════════════════════════════════════ */}
+                {/* Similar Products Section                                  */}
+                {/* ══════════════════════════════════════════════════════════ */}
+                {similarProducts.length > 0 && (
+                    <div className="mt-6 md:mt-10 px-4 md:px-0 mb-8">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl md:text-2xl font-black text-gray-900 dark:text-white">
+                                More in <span className="text-cyan-600 dark:text-cyan-400 capitalize">{product.category}</span>
+                            </h2>
+                            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{similarProducts.length} items</span>
                         </div>
-                        <div className="flex flex-col">
-                            <span className="text-2xl font-black text-gray-900 dark:text-white leading-none">₹{price.toLocaleString('en-IN')}</span>
-                            {savings > 0 && <span className="text-xs text-gray-400 line-through mt-1">₹{mrp.toLocaleString('en-IN')}</span>}
+
+                        {/* Scrollable row on mobile, grid on desktop */}
+                        <div className="flex md:grid md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4 overflow-x-auto pb-4 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
+                            {similarProducts.map(sp => {
+                                const spPrice = Number(sp.selling_price || sp.price) || 0;
+                                const spMrp = Number(sp.mrp) || Math.round(spPrice * 1.2);
+                                const spPct = spMrp > 0 ? Math.round(((spMrp - spPrice) / spMrp) * 100) : 0;
+                                const spQty = cart[sp.id]?.qty || 0;
+
+                                return (
+                                    <div
+                                        key={sp.id}
+                                        className="min-w-[160px] md:min-w-0 bg-white dark:bg-slate-900 rounded-2xl border border-gray-100 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group flex flex-col"
+                                        onClick={() => onOpenProduct?.(sp)}
+                                    >
+                                        {/* Image */}
+                                        <div className="relative aspect-square bg-gray-50 dark:bg-slate-800/50 p-3 flex items-center justify-center overflow-hidden">
+                                            {spPct > 0 && (
+                                                <span className="absolute top-2 left-2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full z-10">{spPct}%</span>
+                                            )}
+                                            <img
+                                                src={getSimilarImg(sp)}
+                                                alt={sp.name}
+                                                className="w-full h-full object-contain mix-blend-multiply dark:mix-blend-normal group-hover:scale-105 transition-transform duration-300"
+                                            />
+                                        </div>
+
+                                        {/* Details */}
+                                        <div className="p-3 flex-1 flex flex-col">
+                                            <p className="text-[13px] font-bold text-gray-800 dark:text-gray-200 line-clamp-2 leading-tight mb-1.5">{sp.name}</p>
+                                            <div className="flex items-end gap-1.5 mt-auto">
+                                                <span className="text-base font-black text-gray-900 dark:text-white">₹{spPrice.toLocaleString('en-IN')}</span>
+                                                {spMrp > spPrice && (
+                                                    <span className="text-[11px] text-gray-400 line-through mb-0.5">₹{spMrp.toLocaleString('en-IN')}</span>
+                                                )}
+                                            </div>
+
+                                            {/* Add to Cart / Qty */}
+                                            <div className="mt-2.5" onClick={e => e.stopPropagation()}>
+                                                {sp.outOfStock ? (
+                                                    <span className="text-[10px] font-bold text-red-500 uppercase">Out of Stock</span>
+                                                ) : spQty > 0 ? (
+                                                    <div className="flex items-center h-8 bg-cyan-600 rounded-lg overflow-hidden">
+                                                        <button onClick={() => updateQty(sp.id, -1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-sm">−</button>
+                                                        <span className="w-1/3 font-bold text-white text-center text-xs">{spQty}</span>
+                                                        <button onClick={() => updateQty(sp.id, 1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-sm">+</button>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => onAddToCart({ id: sp.id, name: sp.name, price: spPrice, img: getSimilarImg(sp), tier: 1 })}
+                                                        className="w-full h-8 bg-cyan-50 dark:bg-cyan-900/20 hover:bg-cyan-100 dark:hover:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400 rounded-lg text-xs font-bold flex items-center justify-center gap-1 border border-cyan-200 dark:border-cyan-800/50 transition-colors"
+                                                    >
+                                                        <ShoppingBag className="w-3.5 h-3.5" /> Add
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
-                    <div className="shrink-0 flex-1 flex justify-end">
+                )}
+            </div>
+
+            {/* Mobile Bottom Bar — Add to Cart + Buy Now */}
+            <div className="md:hidden fixed bottom-0 left-0 w-full bg-white dark:bg-slate-900 border-t border-gray-200 dark:border-slate-800 px-4 py-3 pb-safe z-50 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)]">
+                <div className="flex items-center gap-3">
+                    {/* Price */}
+                    <div className="flex flex-col shrink-0 min-w-[80px]">
+                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-wider">Total</span>
+                        <span className="text-xl font-black text-gray-900 dark:text-white leading-tight">₹{price.toLocaleString('en-IN')}</span>
+                        {savings > 0 && <span className="text-[10px] text-gray-400 line-through">₹{mrp.toLocaleString('en-IN')}</span>}
+                    </div>
+
+                    {/* Buttons */}
+                    <div className="flex-1 flex gap-2">
                         {product.outOfStock ? (
                             <button onClick={() => onNotifyClick(product)}
-                                className="w-full max-w-[200px] bg-orange-500 hover:bg-orange-600 text-white h-12 rounded-xl text-[11px] sm:text-xs font-bold shadow-lg shadow-orange-500/30 flex items-center justify-center gap-1.5 uppercase tracking-wide">
-                                <Bell className="w-4 h-4 flex-shrink-0" /> NOTIFY ME
+                                className="flex-1 bg-orange-500 hover:bg-orange-600 text-white h-12 rounded-xl text-[11px] font-bold shadow-lg flex items-center justify-center gap-1.5 uppercase tracking-wide">
+                                <Bell className="w-4 h-4" /> NOTIFY
                             </button>
                         ) : qty > 0 ? (
-                            <div className="flex items-center h-12 w-[130px] bg-cyan-600 rounded-xl shadow-lg overflow-hidden">
-                                <button onClick={() => updateQty(product.id, -1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-xl">-</button>
-                                <span className="w-1/3 font-bold text-white text-center text-base">{qty}</span>
-                                <button onClick={() => updateQty(product.id, 1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-xl">+</button>
-                            </div>
+                            <>
+                                <div className="flex items-center h-12 w-[110px] bg-cyan-600 rounded-xl shadow-lg overflow-hidden shrink-0">
+                                    <button onClick={() => updateQty(product.id, -1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-lg">−</button>
+                                    <span className="w-1/3 font-bold text-white text-center text-sm">{qty}</span>
+                                    <button onClick={() => updateQty(product.id, 1)} className="w-1/3 h-full flex items-center justify-center font-black text-white text-lg">+</button>
+                                </div>
+                                <button onClick={handleBuyNow}
+                                    className="flex-1 bg-gradient-to-r from-cyan-500 to-teal-500 text-white h-12 rounded-xl text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 uppercase">
+                                    <Zap className="w-4 h-4" /> Buy Now
+                                </button>
+                            </>
                         ) : (
-                            <button onClick={() => onAddToCart({ id: product.id, name: product.name, price, img: getImg(), tier: 1 })}
-                                className="w-full max-w-[180px] bg-cyan-600 hover:bg-cyan-700 text-white h-12 rounded-xl text-sm font-bold shadow-lg shadow-cyan-600/30 flex items-center justify-center gap-2 uppercase tracking-wide">
-                                ADD TO CART
-                            </button>
+                            <>
+                                <button onClick={() => onAddToCart({ id: product.id, name: product.name, price, img: getImg(), tier: 1 })}
+                                    className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white h-12 rounded-xl text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 uppercase tracking-wide">
+                                    <ShoppingBag className="w-4 h-4" /> Add
+                                </button>
+                                <button onClick={handleBuyNow}
+                                    className="flex-1 bg-gradient-to-r from-cyan-500 to-teal-500 text-white h-12 rounded-xl text-xs font-bold shadow-lg flex items-center justify-center gap-1.5 uppercase">
+                                    <Zap className="w-4 h-4" /> Buy Now
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>

@@ -1,8 +1,9 @@
 'use strict';
 
-const pool = require('../config/db');
+const pool         = require('../config/db');
 const asyncHandler = require('../utils/asyncHandler');
-const { ok, err } = require('../utils/response');
+const { ok, err }  = require('../utils/response');
+const etaService   = require('../services/eta.service');
 
 // ── POST /api/orders ─────────────────────────────────────────
 const createOrder = asyncHandler(async (req, res) => {
@@ -26,6 +27,24 @@ const createOrder = asyncHandler(async (req, res) => {
   const phone = customer_phone || req.user?.phone || null;
   const name  = customer_name  || req.user?.name  || null;
 
+  // ── Compute ETA (non-blocking, best-effort) ──────────────────
+  // Uses vendor lat/lng of first item or skips if coordinates unavailable
+  let estimated_eta = null;
+  try {
+    const firstItem      = items[0];
+    const vendorLat      = firstItem?.vendor_lat  ? Number(firstItem.vendor_lat)  : null;
+    const vendorLng      = firstItem?.vendor_lng  ? Number(firstItem.vendor_lng)  : null;
+    const destLat        = firstItem?.dest_lat    ? Number(firstItem.dest_lat)    : null;
+    const destLng        = firstItem?.dest_lng    ? Number(firstItem.dest_lng)    : null;
+
+    if (vendorLat && vendorLng && destLat && destLng) {
+      const travelSecs = await etaService.getEtaSeconds(vendorLat, vendorLng, destLat, destLng);
+      estimated_eta    = etaService.formatEta(new Date(), travelSecs);
+    }
+  } catch (etaErr) {
+    console.warn('[ORDER] ETA calculation failed (non-fatal):', etaErr.message);
+  }
+
   // Insert main booking record
   const { rows } = await pool.query(
     `INSERT INTO bookings (user_id, status, total_amount, booking_date, booking_time, items_json, created_at)
@@ -36,7 +55,7 @@ const createOrder = asyncHandler(async (req, res) => {
       total_amount,
       schedule?.date || new Date().toLocaleDateString('en-IN'),
       schedule?.time || new Date().toLocaleTimeString('en-IN'),
-      JSON.stringify({ items, delivery_address, instructions, tip }),
+      JSON.stringify({ items, delivery_address, instructions, tip, estimated_eta }),
     ]
   );
 
@@ -83,7 +102,7 @@ const createOrder = asyncHandler(async (req, res) => {
     );
   }
 
-  return ok(res, { bookingId: booking.id, status: 'Pending' }, 'Order placed successfully', 201);
+  return ok(res, { bookingId: booking.id, status: 'Pending', estimated_eta }, 'Order placed successfully', 201);
 });
 
 // ── GET /api/orders/my ───────────────────────────────────────
